@@ -2301,6 +2301,7 @@ void K_points_grid::K_points_grid_print()
 ///////// END DEFINITION CLASS K_POINT GRID USED TO CALCULATE BERRY CURVATURE
 
 ///////// START DEFINITION CLASS BERRY CURVATURE
+///////// START DEFINITION CLASS BERRY CURVATURE
 class Berry_curvature
 {
 private:
@@ -2309,7 +2310,7 @@ private:
 	double *epsilon;
 	lattice_spin *Crystal_spin;
 	lattice_J *Crystal_J;
-	complex<double> **Omega;
+	complex<double> ***Omega;
 
 public:
 	Berry_curvature()
@@ -2320,12 +2321,12 @@ public:
 		Crystal_J = NULL;
 		Omega = NULL;
 	};
-	void Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp, int band_number);
+	void Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp);
 	void Berry_curvature_print(ofstream *Re_Omega_file, ofstream *Im_Omega_file);
 	complex<double> Berry_curvature_k(double *k_point);
 };
 
-void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp, int band_number)
+void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp)
 {
 	K_grid = K_grid_tmp;
 	Crystal_J = Crystal_J_tmp;
@@ -2340,9 +2341,12 @@ void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, la
 	int k0 = number_k_points[0];
 	int k1 = number_k_points[1];
 
-	Omega = new complex<double> *[k0];
-	for (int i = 0; i < k0; i++)
-		Omega[i] = new complex<double>[k1];
+	Omega = new complex<double> **[k0];
+	for (int i = 0; i < k0; i++){
+		Omega[i] = new complex<double>*[k1];
+		for (int j = 0; j < k1; j++)
+			Omega[i][j] = new complex<double>[n_2];
+	}
 
 	complex<double> **phase1;
 	phase1 = new complex<double> *[n_2];
@@ -2369,55 +2373,67 @@ void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, la
 	for (int i = 0; i < 4; i++)
 		k_point_path[i] = new double[3];
 
-	complex<double> ***uk;
-	uk = new complex<double>** [4];
 	Hamiltonian_k *Hk;
 	Hk = new Hamiltonian_k[1];
 
-	// cout<<"BEGIN"<<endl;
+	complex<double> ****uk_tmp;
+	uk_tmp = new complex<double>*** [k0];
+	for(int i=0; i<k0; i++)
+		uk_tmp[i] = new complex<double>** [k1];
 
+	complex<double> ***uk;
+	uk = new complex<double>** [4];
+	
+	double* k_point_tmp;
+	#pragma omp parallel for
+	for (int i = 0; i < k0; i++)
+		for (int j = 0; j < k1; j++){
+			cout << i << " / " << k0 << endl;
+			//cout<<j<<" / "<<k1<<endl;
+			k_point_tmp=K_grid->K_points_grid_get_values_grid(i, j);
+			Hk->push_values(k_point_tmp, Crystal_J, Crystal_spin);
+			Hk->push_gap(epsilon);
+			Hk->Cholesky_decomposition_Lapack();
+			uk_tmp[i][j] = Hk->eigenvectors();
+			//Hk->free_Hamiltonian_k();
+	}
+	// cout<<"BEGIN"<<endl;
+	//#pragma omp parallel for
 	for (int i = 0; i < k0; i++)
 		for (int j = 0; j < k1; j++)
 		{
 			cout << i << " / " << k0 << endl;
-			// cout<<j<<" / "<<k1<<endl;
+			cout<<j<<" / "<<k1<<endl;
 			//		////periodic boundary conditions
 			if ((i < number_k_points[1] - 1) && (j < number_k_points[0] - 1))
 			{
-				k_point_path[0] = K_grid->K_points_grid_get_values_grid(i, j);
-				k_point_path[3] = K_grid->K_points_grid_get_values_grid(i, j + 1);
-				k_point_path[2] = K_grid->K_points_grid_get_values_grid(i + 1, j+1);
-				k_point_path[1] = K_grid->K_points_grid_get_values_grid(i + 1, j);
+				uk[0] = uk_tmp[i][j];
+				uk[3] = uk_tmp[i][j+1];
+				uk[2] = uk_tmp[i+1][j+1];
+				uk[1] = uk_tmp[i+1][j];
 			}
 			else if ((i < number_k_points[1] - 1) && (j == number_k_points[1] - 1))
 			{
-				k_point_path[0] = K_grid->K_points_grid_get_values_grid(i, j);
-				k_point_path[3] = K_grid->K_points_grid_get_values_grid(i, 0);
-				k_point_path[2] = K_grid->K_points_grid_get_values_grid(i + 1, 0);
-				k_point_path[1] = K_grid->K_points_grid_get_values_grid(i + 1, j);
+				uk[0] = uk_tmp[i][j];
+				uk[3] = uk_tmp[i][0];
+				uk[2] = uk_tmp[i+1][0];
+				uk[1] = uk_tmp[i+1][j];
 			}
 			else if ((j < number_k_points[1] - 1) && (i == number_k_points[1] - 1))
 			{
-				k_point_path[0] = K_grid->K_points_grid_get_values_grid(i, j);
-				k_point_path[3] = K_grid->K_points_grid_get_values_grid(i, j + 1);
-				k_point_path[2] = K_grid->K_points_grid_get_values_grid(0, j + 1);
-				k_point_path[1] = K_grid->K_points_grid_get_values_grid(0, j );
+				uk[0] = uk_tmp[i][j];
+				uk[3] = uk_tmp[i][j+1];
+				uk[2] = uk_tmp[0][j+1];
+				uk[1] = uk_tmp[0][j];
 			}
 			else
 			{
-				k_point_path[0] = K_grid->K_points_grid_get_values_grid(i, j);
-				k_point_path[3] = K_grid->K_points_grid_get_values_grid(i, 0);
-				k_point_path[2] = K_grid->K_points_grid_get_values_grid(0, 0);
-				k_point_path[1] = K_grid->K_points_grid_get_values_grid(0, j);
+				uk[0] = uk_tmp[i][j];
+				uk[3] = uk_tmp[i][0];
+				uk[2] = uk_tmp[0][0];
+				uk[1] = uk_tmp[0][j];
 			}
-			for (int r = 0; r < 4; r++)
-			{
-				Hk->push_values(k_point_path[r], Crystal_J, Crystal_spin);
-				Hk->push_gap(epsilon);
-				Hk->Cholesky_decomposition_Lapack();
-				uk[r] = Hk->eigenvectors();
-				Hk->free_Hamiltonian_k();
-			}
+
 			for (int l = 0; l < n_2; l++)
 				for (int m = 0; m < n_2; m++)
 				{
@@ -2426,13 +2442,13 @@ void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, la
 					phase3[l][m] = function_scalar_product_2(uk[3], uk[2], l, m, n_2);
 					phase4[l][m] = function_scalar_product_2(uk[3], uk[0], l, m, n_2);
 				}
-
-			phase1_tmp = function_quantum_of_phase(arg(phase1[band_number][band_number]));
-			phase2_tmp = function_quantum_of_phase(arg(phase2[band_number][band_number]));
-			phase3_tmp = function_quantum_of_phase(arg(phase3[band_number][band_number]));
-			phase4_tmp = function_quantum_of_phase(arg(phase4[band_number][band_number]));
-
-			Omega[i][j] = phase1_tmp + phase2_tmp - phase3_tmp - phase4_tmp;
+			for (int r =0; r<n_2;r++){
+				phase1_tmp = function_quantum_of_phase(arg(phase1[r][r]));
+				phase2_tmp = function_quantum_of_phase(arg(phase2[r][r]));
+				phase3_tmp = function_quantum_of_phase(arg(phase3[r][r]));
+				phase4_tmp = function_quantum_of_phase(arg(phase4[r][r]));
+				Omega[i][j][r] = phase1_tmp + phase2_tmp - phase3_tmp - phase4_tmp;
+			}
 		}
 
 	for(int r=0;r<4;r++)
@@ -2453,7 +2469,7 @@ void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, la
 	delete[] Hk;
 };
 
-complex<double> Berry_curvature ::Berry_curvature_k(double *k_point)
+complex<double>* Berry_curvature ::Berry_curvature_k(double *k_point)
 {
 	////finding the k points nearer to the input k_point and doing an interpolation
 	///(the interpolation is done considering only a part of the k points around, because of the laziness of the programmer to consider all the cases)
@@ -2470,20 +2486,8 @@ complex<double> Berry_curvature ::Berry_curvature_k(double *k_point)
 	int j = (int)(k_point_tmp[1] / K_grid->K_points_grid_get_vaues_spacing());
 	int k0 = K_grid->K_points_grid_get_number_k_points()[0];
 	int k1 = K_grid->K_points_grid_get_number_k_points()[1];
-	complex<double> mean;
-	mean.real(0.0);
-	mean.imag(0.0);
-	complex<double> factor(4, 0);
-	// if((i<k0-1)&&(j<k1-1))
-	//	mean=(Omega[i+1][j+1]+Omega[i][j+1]+Omega[i+1][j]+Omega[i][j])/factor;
-	// else if((i<k0-1)&&(j==k1-1))
-	//	mean=(Omega[i+1][0]+Omega[i][0]+Omega[i+1][j]+Omega[i][j])/factor;
-	// else if ((j<k0-1)&&(i==k1-1))
-	//	mean=(Omega[0][j+1]+Omega[i][j+1]+Omega[0][j]+Omega[i][j])/factor;
-	// else
-	//	mean=(Omega[0][0]+Omega[i][0]+Omega[0][j]+Omega[i][j])/factor;
-	mean = Omega[i][j];
-	return mean;
+	
+	return Omega[i][j];
 };
 
 void Berry_curvature ::Berry_curvature_print(ofstream *Re_Omega_file, ofstream *Im_Omega_file)
@@ -2492,10 +2496,10 @@ void Berry_curvature ::Berry_curvature_print(ofstream *Re_Omega_file, ofstream *
 	for (int i = 0; i < number_k_points[0]; i++)
 	{
 		for (int j = 0; j < number_k_points[1]; j++)
-		{
-			(*Re_Omega_file) << i << " " << j << " " << Omega[i][j].real() << endl;
-			(*Im_Omega_file) << i << " " << j << " " << Omega[i][j].imag() << endl;
-		}
+			for (int r =0; r< O_basis_dimension/2;r++){
+				(*Re_Omega_file) << i << " " << j << " " << Omega[i][j][r].real() << endl;
+				(*Im_Omega_file) << i << " " << j << " " << Omega[i][j][r].imag() << endl;
+			}
 		(*Re_Omega_file) << endl;
 		(*Im_Omega_file) << endl;
 	}
@@ -2525,7 +2529,7 @@ int main()
 	atoms_spins_file.open("spins.data");
 	crystal_spin.push_values(&crystal, &atoms_spins_file);
 	atoms_spins_file.close();
-	crystal_spin.print();
+	//crystal_spin.print();
 	///// inizializzazione di questo oggetto richiede un file coupling.txt
 	///// coupling.txt ==  elemento 1 (elementi indicati con un indice 0,1,2,...)| elemento 2 | distanza coupling (in angstrom) | J_value(isotropic)
 	double max_distance_coupling = 10.000;
@@ -2536,7 +2540,7 @@ int main()
 	couplings_file.close();
 	//crystal_J.print();
 	//crystal_J.building_values(max_distance_coupling,&crystal_spin);
-	crystal_J.print();
+	//crystal_J.print();
 	////END CONSTRUCTION CRYSTAL
 
 	//////START STUDYING THE DIAGONALIZATION FOR ONE K POINT (000)
@@ -2656,14 +2660,13 @@ int main()
 //
 	//////START STUDYING THE BERRY CURVATURE IN A K PLANE
 	K_points_grid K_grid;
-	double spacing_grid = 0.01;
+	double spacing_grid = 0.001;
 	double *shift_grid;
 	shift_grid = new double[3];
 	for (int i = 0; i < 3; i++)
 		shift_grid[i] = 0.0;
 
 	int *plane_grid;
-	int band_number = 1;
 	plane_grid = new int[3];
 	/// plane xy
 	plane_grid[0] = 1;
@@ -2671,9 +2674,9 @@ int main()
 	plane_grid[2] = 0;
 	/// creating the K grid in xy plane
 	K_grid.K_points_grid_push_values(&crystal, spacing_grid, shift_grid, plane_grid);
-	K_grid.K_points_grid_print();
+	///K_grid.K_points_grid_print();
 	Berry_curvature Omega;
-	Omega.Berry_curvature_push_values(&K_grid, &crystal_J, &crystal_spin, epsilon, band_number);
+	Omega.Berry_curvature_push_values(&K_grid, &crystal_J, &crystal_spin, epsilon);
 	ofstream Re_Omega_file;
 	ofstream Im_Omega_file;
 	Re_Omega_file.open("Re_Berry_curvature.data");
