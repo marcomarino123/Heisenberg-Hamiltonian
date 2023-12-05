@@ -8,27 +8,21 @@
 
 using namespace std;
 // declaring C function/libraries in the C++ code
-#ifdef __cplusplus
 extern "C"
 {
-#endif
 // wrapper of the Fortran Lapack library into C
 #include <stdio.h>
 #include <omp.h>
 #include <complex.h>
 #include <lapacke.h>
-// #define CMPLX(x, y) ((lapack_complex_double)((double)(x) + I * (double)(y)))
-#define LAPACK_ROW_MAJOR 101
-#define LAPACK_COL_MAJOR 102
-#ifdef __cplusplus
 }
-#endif
 const double pigreco = 3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679;
 
 ///////// START GENERIC FUNCTIONS USED DURING THE EXECUTION
 double function_det(double *a, double *b, double *c)
 {
-	double det = 0;
+	double det;
+	det=0;
 	det = a[0] * (b[1] * c[2] - c[1] * b[2]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
 	return det;
 };
@@ -36,7 +30,7 @@ double function_det(double *a, double *b, double *c)
 double *function_vector_product(double *a, double *b)
 {
 	double *c;
-	c = new double[3];
+	c=new double[3];
 	c[0] = a[1] * b[2] - a[2] * b[1];
 	c[1] = a[2] * b[0] - a[0] * b[2];
 	c[2] = a[0] * b[1] - a[1] * b[0];
@@ -86,9 +80,9 @@ double **function_skew_symmetric(double *a)
 	R[2][1] = a[1];
 	return R;
 };
-double function_scalar_product(double *a, double *b)
+double function_scalar_product(double* a, double *b)
 {
-	double c = 0;
+	double c=0;
 	for (int i = 0; i < 3; i++)
 		c = c + a[i] * b[i];
 	return c;
@@ -122,10 +116,12 @@ complex<double> function_determinant(complex<double> **U, int n)
 	free(temporary);
 	free(VS);
 
-	lapack_complex_double determinant = 1.0 + _Complex_I * 1.0;
+	lapack_complex_double determinant = 1.0 + _Complex_I * 0.0;
 
 	for (int i = 0; i < n; i++)
 		determinant = determinant * WR[i];
+
+	free(WR);
 
 	return determinant;
 };
@@ -252,59 +248,63 @@ double *function_translate(double *coordinates1, double *count, double **bravais
 
 
 ///////// START DATA_STRUCTURE USED IN THE CREATION OF TABLES AND LISTS
-class node
+class Node_list
 {
 private:
-	int empty_head;
 	int site;
 	double **value;
 	double *distance;
-	node *next;
-
+	Node_list *next;
 public:
-	node()
+	Node_list()
 	{
-		empty_head = 1;
-		site = 0;
-		value = NULL;
-		distance = NULL;
-		next = NULL;
+		site = -1;
+		value = nullptr;
+		distance = nullptr;
+		next = nullptr;
 	};
-	node(double **value_tmp, double *distance_tmp, int site_tmp)
+	void fill_node(double **value_tmp, double *distance_tmp, int site_tmp)
 	{
-		empty_head = 0;
 		site = site_tmp;
 		value = value_tmp;
 		distance = distance_tmp;
-		next = NULL;
+		next=nullptr;
 	};
-	void fill_head(double **value_tmp, double *distance_tmp)
+	Node_list* push_value(double **value_tmp, double *distance_tmp)
 	{
-		empty_head = 0;
-		value = value_tmp;
-		distance = distance_tmp;
-	};
-	node *push_value(double **value_tmp, double *distance_tmp)
-	{
-		node *next_tmp = new node(value_tmp, distance_tmp, site + 1);
-		next = next_tmp;
+		Node_list* next_tmp=new Node_list();
+		next_tmp->fill_node(value_tmp,distance_tmp,site+1);
+		next=next_tmp;
 		return next;
 	};
 	double **pull_value()
 	{
 		return value;
 	};
+	int pull_site()
+	{
+		return site;
+	};
 	double *pull_distance()
 	{
 		return distance;
 	};
-	node *pull_next()
+	Node_list *pull_next()
 	{
 		return next;
 	};
-	int pull_empty_head()
-	{
-		return empty_head;
+	~Node_list(){
+		Node_list* next_tmp;
+		Node_list* prec_tmp;
+		prec_tmp=this;
+		next_tmp=next;
+		while(next_tmp!=NULL){
+			delete[] prec_tmp->pull_value();
+			delete[] prec_tmp->pull_distance();
+			prec_tmp=prec_tmp->pull_next();
+			next_tmp=prec_tmp->pull_next();
+		}
+		delete[] prec_tmp;
 	};
 };
 ///////// START DATA_STRUCTURE USED IN THE CREATION OF TABLES AND LISTS
@@ -328,11 +328,11 @@ private:
 public:
 	spin_operator()
 	{
-		site_coordinates = NULL;
+		site_coordinates = nullptr;
 		flag = 0;
 		site = 0;
 		modulus = 0;
-		orientation = NULL;
+		orientation = nullptr;
 	}
 	void push_values(int site_tmp, double *site_coordinates_tmp, double *spin_value_tmp);
 	void define_local_frame();
@@ -348,6 +348,10 @@ public:
 	double *pull_orientation()
 	{
 		return orientation;
+	}
+	~spin_operator(){
+		delete[] site_coordinates;
+		delete[] orientation;
 	}
 };
 
@@ -378,9 +382,10 @@ void spin_operator::define_local_frame()
 		double norm1;
 		double norm2;
 		int counting;
+		double* Real_u;
+		double* Imag_u;
 		/// defining lab frame
-		double *z;
-		z = new double[3];
+		double* z=new double[3];
 		z[0] = 0;
 		z[1] = 0;
 		z[2] = 1;
@@ -388,8 +393,7 @@ void spin_operator::define_local_frame()
 		/// if z lab frame is not parallel to spin orientation
 		if (abs(norm1) != 1)
 		{
-			double *v;
-			v = new double[3];
+			double* v=new double[3];
 			v[0] = -orientation[1] * z[2] + orientation[2] * z[1];
 			v[1] = orientation[0] * z[2] - orientation[2] * z[0];
 			v[2] = -orientation[0] * z[1] + orientation[1] * z[0];
@@ -398,12 +402,14 @@ void spin_operator::define_local_frame()
 			{
 				norm2 = norm2 + orientation[i] * z[i];
 			}
-			double **R;
-			R = new double *[3];
-			for (int i = 0; i < 3; i++)
-				R[i] = new double[3];
+			double** R=new double*[3];
+			double** A2=new double*[3];
+			for(int i=0;i<3;i++){
+				R[i]=new double[3];
+				A2[i]=new double[3];
+			}
 			double **A = function_skew_symmetric(v);
-			double A2[3][3];
+			
 			for (int i = 0; i < 3; i++)
 			{
 				for (int j = 0; j < 3; j++)
@@ -421,8 +427,15 @@ void spin_operator::define_local_frame()
 					else
 						R[i][j] = A[i][j] + A2[i][j] / (1 + norm2);
 				}
-			for (int i = 0; i < 3; i++)
-				delete[] (double *)A[i];
+			for (int i = 0; i < 3; i++){
+				delete[] (double*)A[i];
+				delete[] (double*)R[i];
+				delete[] (double*)A2[i];
+			}
+			delete[] (double**)A;
+			delete[] (double**)R;
+			delete[] (double**)A2;
+			delete[] (double*)v;
 			/// logical condition already satisfied: in order to avoid the definition of a new variable let use norm1
 			norm1 = 0;
 			norm2 = 0;
@@ -439,16 +452,12 @@ void spin_operator::define_local_frame()
 				u[i].real(R[i][0] / norm1);
 				u[i].imag(R[i][1] / norm2);
 			}
-			for (int i = 0; i < 3; i++)
-				delete[] (double *)R[i];
 		}
 		else
 		{
 			/// in the case z and orientation are parallel
-			double *Real_u;
-			double *Imag_u;
-			Real_u = new double[3];
-			Imag_u = new double[3];
+			Real_u=new double[3];
+			Imag_u=new double[3];
 			for (int i = 0; i < 3; i++)
 			{
 				Real_u[i] = 0.0;
@@ -459,24 +468,15 @@ void spin_operator::define_local_frame()
 				Imag_u[1] = -1.0;
 			else
 				Imag_u[1] = 1.0;
-			/// the approach with the determinant is not necessary ("overshooting")
-			// double det_tmp = 0;
-			// det_tmp = function_det(Real_u, Imag_u, orientation);
-			/// being interested in a hand-right frame
-			// if (det_tmp < 0.00){
-			//	double var_tmp;
-			//	for (int i = 0; i < 3; i++)
-			//		Imag_u[i] = -Imag_u[i];
-			// }
 			for (int i = 0; i < 3; i++)
 			{
 				u[i].real(Real_u[i]);
 				u[i].imag(Imag_u[i]);
 			}
-			delete[] (double *)Real_u;
-			delete[] (double *)Imag_u;
 		}
-		delete[] z;
+		delete[] (double*)z;
+		delete[] (double*)Real_u;
+		delete[] (double*)Imag_u;
 	}
 	else
 	{
@@ -518,8 +518,8 @@ public:
 	lattice_crystal()
 	{
 		number_atoms = 0;
-		atoms_coordinates = NULL;
-		bravais_lattice = NULL;
+		atoms_coordinates = nullptr;
+		bravais_lattice = nullptr;
 		volume = 0.0;
 	};
 	void push_values(ifstream *bravais_lattice_file, ifstream *atoms_coordinates_file);
@@ -548,6 +548,9 @@ public:
 
 void lattice_crystal::push_values(ifstream *bravais_lattice_file, ifstream *atoms_coordinates_file)
 {
+	double vec1[3];
+	double vec2[3];
+	double vec3[3];
 	bravais_lattice_file->seekg(0);
 	atoms_coordinates_file->seekg(0);
 	bravais_lattice = new double *[3];
@@ -571,12 +574,6 @@ void lattice_crystal::push_values(ifstream *bravais_lattice_file, ifstream *atom
 		for (int j = 0; j < 3; j++)
 			*atoms_coordinates_file >> atoms_coordinates[i][j];
 	}
-	double *vec1;
-	vec1 = new double[3];
-	double *vec2;
-	vec2 = new double[3];
-	double *vec3;
-	vec3 = new double[3];
 	for (int i = 0; i < 3; i++)
 	{
 		vec1[i] = bravais_lattice[0][i];
@@ -584,9 +581,6 @@ void lattice_crystal::push_values(ifstream *bravais_lattice_file, ifstream *atom
 		vec3[i] = bravais_lattice[2][i];
 	}
 	volume = function_det(vec1, vec2, vec3);
-	delete[] vec1;
-	delete[] vec2;
-	delete[] vec3;
 };
 
 void lattice_crystal::print()
@@ -618,17 +612,19 @@ private:
 	int number_magnetic_atoms;
 	double **bravais_lattice;
 	double **magnetic_atom_coordinates;
-	int *ordering;
+	int *ordering_from_magnetic_to_crystal;
+	int *ordering_from_crystal_to_magnetic;
 public:
 	lattice_spin()
 	{
 		number_atoms = 0;
-		lattice = NULL;
-		spin = NULL;
+		lattice = nullptr;
+		spin = nullptr;
 		number_magnetic_atoms = 0;
-		magnetic_atom_coordinates=NULL;
-		bravais_lattice=NULL;
-		ordering=NULL;
+		magnetic_atom_coordinates=nullptr;
+		bravais_lattice=nullptr;
+		ordering_from_magnetic_to_crystal=nullptr;
+		ordering_from_crystal_to_magnetic=nullptr;
 	}
 	void push_values(lattice_crystal *lattice_tmp, ifstream *spin_atoms_file);
 	void print();
@@ -652,9 +648,13 @@ public:
 	{
 		return magnetic_atom_coordinates;
 	}
-	int *pull_ordering()
+	int *pull_ordering_from_magnetic_to_crystal()
 	{
-		return ordering;
+		return ordering_from_magnetic_to_crystal;
+	}
+	int *pull_ordering_from_crystal_to_magnetic()
+	{
+		return ordering_from_crystal_to_magnetic;
 	}
 };
 
@@ -664,59 +664,59 @@ void lattice_spin::push_values(lattice_crystal *lattice_tmp, ifstream *spin_atom
 	number_atoms = lattice->pull_number_atoms();
 	bravais_lattice = lattice->pull_bravais_lattice();
 	
-	node* magnetic_atoms_list;
-	node* magnetic_atoms_list_next;
-	magnetic_atoms_list=new node();
-	ordering=new int[number_atoms];
+	int ordering_tmp[number_atoms];
+	double spin_value_tmp[number_atoms][3];
+	ordering_from_crystal_to_magnetic=new int[number_atoms];
+	number_magnetic_atoms=0;
 
 	spin_atoms_file->seekg(0);
-	/// while site_coordinates for each atom is memory-initialized into lattice object, spin_vaue is not
-	double** spin_value_tmp;
-
-	spin_atoms_file->seekg(0);
-	for (int i = 0; i < number_atoms; i++)
+	for (int i= 0;i<number_atoms;i++)
 	{
-		spin_value_tmp=new double*[3];
-		for (int j = 0; j < 3; j++){
-			spin_value_tmp[j]=new double[3];
-			*spin_atoms_file >> spin_value_tmp[j][j];
+		for (int j=0;j<3;j++){
+			*spin_atoms_file >> spin_value_tmp[i][j];
 		}
-		if (function_module_matrix(spin_value_tmp) != 0){
-			ordering[i]=number_magnetic_atoms;
+
+		if (function_module(spin_value_tmp[i])!= 0){
+			ordering_tmp[number_magnetic_atoms]=i;
+			ordering_from_crystal_to_magnetic[i]=number_magnetic_atoms;
 			number_magnetic_atoms = number_magnetic_atoms + 1;
-			if(number_magnetic_atoms==1){
-				magnetic_atoms_list->fill_head(spin_value_tmp,lattice->pull_sitei_coordinates(i));
-				magnetic_atoms_list_next=magnetic_atoms_list;
-			}else
-				magnetic_atoms_list_next=magnetic_atoms_list_next->push_value(spin_value_tmp,lattice->pull_sitei_coordinates(i));
 		}
 		else
-			ordering[i]=number_atoms;
+			ordering_from_crystal_to_magnetic[i]=number_atoms;
 	}
 
-	spin= new spin_operator[number_magnetic_atoms];
-	magnetic_atom_coordinates= new double*[number_magnetic_atoms];
+
+	magnetic_atom_coordinates=new double*[number_magnetic_atoms];
+	ordering_from_magnetic_to_crystal=new int[number_magnetic_atoms];
+		for (int i=0;i<number_magnetic_atoms;i++){
+		ordering_from_magnetic_to_crystal[i]=ordering_tmp[i];
+	}
+	
+	spin=new spin_operator[number_magnetic_atoms];
 
 	double* spin_value;
-	node* magnetic_atoms_list_preceding;
-	magnetic_atoms_list_next=magnetic_atoms_list;
-	
-	for (int i = 0; i < number_magnetic_atoms; i++)
+
+	for (int i=0;i<number_magnetic_atoms;i++)
 	{
-		magnetic_atom_coordinates[i]=magnetic_atoms_list_next->pull_distance();
+		magnetic_atom_coordinates[i]=new double[3];
+		magnetic_atom_coordinates[i]=lattice->pull_sitei_coordinates(ordering_from_magnetic_to_crystal[i]);
 		spin_value=new double[3];
-		for ( int r = 0; r<3; r++)
-			spin_value[r]=magnetic_atoms_list_next->pull_value()[r][r];
-		spin[i].push_values(ordering[i],magnetic_atoms_list_next->pull_distance(),spin_value);
-		delete[] magnetic_atoms_list_next->pull_value();
-		magnetic_atoms_list_next=magnetic_atoms_list_next->pull_next();
+		for (int r = 0; r<3; r++)
+			spin_value[r]=spin_value_tmp[ordering_from_magnetic_to_crystal[i]][r];
+		spin[i].push_values(ordering_from_magnetic_to_crystal[i],lattice->pull_sitei_coordinates(ordering_from_magnetic_to_crystal[i]),spin_value);
 	}
+	cout<<" from magnetic to crystal"<<endl;
+	for (int i=0;i<number_magnetic_atoms;i++)
+		cout<<i<<" "<<ordering_from_magnetic_to_crystal[i]<<endl;
+	cout<<" from crystal to magnetic"<<endl;
+	for (int i=0;i<number_atoms;i++)
+		cout<<i<<" "<<ordering_from_crystal_to_magnetic[i]<<endl;
 };
 
 void lattice_spin::print()
 {
 	lattice->print();
-	for (int i = 0; i < number_magnetic_atoms; i++)
+	for (int i=0;i<number_magnetic_atoms;i++)
 		spin[i].print();
 };
 ///////// END DEFINITION CLASS SPIN-LATTICE OF THE SYSTEM
@@ -731,15 +731,15 @@ private:
 	/// two atoms i and j can be coupled at different distances
 	/// to save the different coupling with respect to the relative distance
 	/// between the atoms i and j a dynamical list is used
-	node ***Jij_lattice;
+	Node_list ***Jij_lattice;
 	lattice_spin *spin_lattice;
 
 public:
 	lattice_J()
 	{
 		max_distance_coupling = 0;
-		Jij_lattice = NULL;
-		spin_lattice = NULL;
+		Jij_lattice = nullptr;
+		spin_lattice = nullptr;
 	}
 	void push_values(int max_distance_coupling_tmp, lattice_spin *spin_lattice_tmp, ifstream *couplings_file);
 	void building_values(int max_distance_coupling_tmp, lattice_spin *spin_lattice_tmp);
@@ -762,109 +762,105 @@ void lattice_J::push_values(int max_distance_coupling_tmp, lattice_spin *spin_la
 	max_distance_coupling = max_distance_coupling_tmp;
 	int number_atoms = spin_lattice->pull_number_atoms();
 
-	double *distance_tmp1;
-	double *distance_tmp2;
-	distance_tmp1 = new double[3];
+	double distance_tmp[3];
+	double *distance;
 	double distance_module;
-	double **coupling_tmp;
+	double **coupling;
+	double **coupling_tmp_allocate1;
+	double *coupling_tmp_allocate2;
+	double coupling_tmp;
+	double** temp;
 
 	/// initialization heads of the lattice_J
-	Jij_lattice = new node **[number_magnetic_atoms];
-	for (int i = 0; i < number_magnetic_atoms; i++)
-	{
-		Jij_lattice[i] = new node *[number_magnetic_atoms];
-		for (int j = 0; j < number_magnetic_atoms; j++)
-			Jij_lattice[i][j] = new node();
+	Jij_lattice=new Node_list**[number_magnetic_atoms];
+	for (int i=0;i<number_magnetic_atoms;i++){
+		Jij_lattice[i]=new Node_list*[number_magnetic_atoms];
+		for (int j=0;j<number_magnetic_atoms;j++)
+			Jij_lattice[i][j]=new Node_list();
 	}
 	/// pointers to go through the dynamical lists for each ij
-	node ***Jij_lattice_next;
-	Jij_lattice_next = new node **[number_magnetic_atoms];
-	for (int i = 0; i < number_magnetic_atoms; i++)
-		Jij_lattice_next[i] = new node *[number_magnetic_atoms];
+	Node_list ***Jij_lattice_next;
+	Jij_lattice_next = new Node_list**[number_magnetic_atoms];
+	for (int i=0;i<number_magnetic_atoms;i++)
+		Jij_lattice_next[i] = new Node_list*[number_magnetic_atoms];
 
 	couplings_file->seekg(0);
-	int i;
-	int j;
-	int flag;
-	while (couplings_file->peek() != EOF)
+	int i; int j; int site;
+	int i_tmp; int j_tmp;
+	while (couplings_file->peek()!=EOF)
 	{
 		distance_module = 0.0;
-		*couplings_file >> i >> j;
-		///convertion from crystal ordering of the atoms, to spin_crystal ordering
-		i=spin_lattice->pull_ordering()[i];
-		j=spin_lattice->pull_ordering()[j];
+		*couplings_file>>i_tmp;
+		*couplings_file>>j_tmp;
 		/// distance between the cells of the two atoms in relative coordinates
-		for (int l = 0; l < 3; l++)
-			*couplings_file >> distance_tmp1[l];
-		/// convertng the distance in cartesian coordinates
-		/// and allocating memory for the distance vector
-		distance_tmp2 = new double[3];
-		// for (int l=0;l<3;l++)
-		//	distance_tmp2[l]=distance_tmp1[0]*lattice->pull_bravais_lattice()[0][l]+distance_tmp1[1]*lattice->pull_bravais_lattice()[1][l]+distance_tmp1[2]*lattice->pull_bravais_lattice()[2][l];
-		/// saving the distance from the file
-		for (int l = 0; l < 3; l++)
-			distance_tmp2[l] = distance_tmp1[l];
-		*couplings_file >> distance_module;
-		//cout<<distance_module<<endl;
-		if (distance_module <= max_distance_coupling)
-		{
+		for (int l=0;l<3;l++)
+			*couplings_file >> distance_tmp[l];
+		*couplings_file >> distance_module >> coupling_tmp;
+		if (distance_module <= max_distance_coupling){
+			///convertion from crystal ordering of the atoms, to spin_crystal ordering
+			i=spin_lattice->pull_ordering_from_crystal_to_magnetic()[i_tmp];
+			j=spin_lattice->pull_ordering_from_crystal_to_magnetic()[j_tmp];
+			///allocating_memory
+			distance=new double[3];
+			for(int s=0;s<3;s++)
+				distance[s]=distance_tmp[s];
 			/// initialization values to push into Jij (for each distance)
-			coupling_tmp = new double *[3];
-			for (int i = 0; i < 3; i++)
-			{
-				coupling_tmp[i] = new double[3];
-			}
-
 			/// considering only the isotrpic part of the coupling and putting it on the diagonal of a 3x3 matrix
 			/// the generalization to anisotropic terms is quite straightforward
-			for (int l = 0; l < 3; l++)
-				for (int r = 0; r < 3; r++)
-				{
-					if (l == r)
-					{
-						if (l == 0)
-						{
-							*couplings_file >> coupling_tmp[l][r];
-							coupling_tmp[l][r] = -coupling_tmp[l][r];
-						}
-						else
-						{
-							coupling_tmp[l][r] = coupling_tmp[0][0];
-						}
-					}
-					else
-						coupling_tmp[l][r] = 0.0;
+			coupling=new double*[3];
+			for(int s=0;s<3;s++)
+				coupling[s]=new double[3];
+			for(int q=0;q<3;q++){
+				if(q==0){
+					coupling[0][0]=-coupling_tmp;
+					cout<<coupling[0][0]<<endl;
 				}
-			flag = Jij_lattice[i][j]->pull_empty_head();
-			if (flag == 1)
+				for(int t=0;t<3;t++){
+					if(t==q)
+						coupling[q][t]=coupling[0][0];
+					else
+						coupling[q][t]=0.0;
+				}
+			}
+
+			site = Jij_lattice[i][j]->pull_site();
+			if(site < 0)
 			{
-				Jij_lattice[i][j]->fill_head(coupling_tmp, distance_tmp2);
-				Jij_lattice_next[i][j] = Jij_lattice[i][j];
+				Jij_lattice[i][j]->fill_node(coupling,distance,0);
+				Jij_lattice_next[i][j]=Jij_lattice[i][j];
 			}
 			else
-				Jij_lattice_next[i][j] = Jij_lattice_next[i][j]->push_value(coupling_tmp, distance_tmp2);
+				Jij_lattice_next[i][j]=Jij_lattice_next[i][j]->push_value(coupling, distance);
 		}else
 			break;
+		cout<<i<<" "<<j<<" "<<site<<" "<<distance_module<<endl;
+		cout<<Jij_lattice_next[i][j]<<endl;
 	}
-	/// initializing the atoms not having any coupling to coupling 0
+	
+	///// initializing the atoms not having any coupling to coupling 0
 	for (int i = 0; i < number_magnetic_atoms; i++)
 		for (int j = 0; j < number_magnetic_atoms; j++)
 		{
-			flag = Jij_lattice[i][j]->pull_empty_head();
-			if (flag == 1)
+			site = Jij_lattice[i][j]->pull_site();
+			if(site < 0)
 			{
-				coupling_tmp = new double *[3];
-				distance_tmp2 = new double[3];
-				for (int i = 0; i < 3; i++)
+				coupling=new double*[3];
+				distance=new double[3];
+				for (int r=0;r<3;r++)
 				{
-					distance_tmp2[i] = 0.0;
-					coupling_tmp[i] = new double[3];
-					for (int j = 0; j < 3; j++)
-						coupling_tmp[i][j] = 0.0;
+					distance[r] = 0.0;
+					coupling[r]=new double[3];
+					for (int t=0;t<3;t++)
+						coupling[r][t] = 0.0;
 				}
-				Jij_lattice[i][j]->fill_head(coupling_tmp, distance_tmp2);
+				Jij_lattice_next[i][j]->fill_node(coupling,distance,0);
 			}
 		}
+		
+	for(int i=0;i<number_magnetic_atoms;i++)
+		delete[] (double*) Jij_lattice_next[i];
+	delete[] (double**) Jij_lattice_next;
+	
 };
 
 void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spin_lattice_tmp)
@@ -889,25 +885,28 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 	double **magnetic_atoms_coordinates = spin_lattice->pull_magnetic_atoms_coordinates();
 
 	/// initialization heads of the lattice_J
-	Jij_lattice = new node **[number_magnetic_atoms];
-	for (int i = 0; i < number_magnetic_atoms; i++)
+	Jij_lattice = new Node_list **[number_magnetic_atoms];
+	for (int i=0;i<number_magnetic_atoms;i++)
 	{
-		Jij_lattice[i] = new node *[number_magnetic_atoms];
-		for (int j = 0; j < number_magnetic_atoms; j++)
-			Jij_lattice[i][j] = new node();
+		Jij_lattice[i] = new Node_list *[number_magnetic_atoms];
+		for (int j=0;j<number_magnetic_atoms;j++)
+			Jij_lattice[i][j] = new Node_list();
 	}
 	/// pointers to go through the dynamical lists for each ij
-	node ***Jij_lattice_next;
-	Jij_lattice_next = new node **[number_magnetic_atoms];
-	for (int i = 0; i < number_magnetic_atoms; i++)
-		Jij_lattice_next[i] = new node *[number_magnetic_atoms];
+	Node_list ***Jij_lattice_next;
+	Jij_lattice_next = new Node_list **[number_magnetic_atoms];
+	for (int i = 0; i < number_magnetic_atoms; i++){
+		Jij_lattice_next[i] = new Node_list *[number_magnetic_atoms];
+		for (int j=0;j<number_magnetic_atoms;j++)
+			Jij_lattice_next[i][j]=Jij_lattice[i][j];
+	}
 
 	double distance;
 	int count1;
 	int count2;
 	int count3;
 	double **couplingmatrix_tmp = new double *[3];
-	for (int i = 0; i < 3; i++)
+	for (int i=0;i<3;i++)
 		couplingmatrix_tmp[i] = new double[3];
 
 	////reading the effective couplings from the file couplings_effective.data
@@ -917,6 +916,8 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 	/// i j J shell
 	ifstream couplings_effective_file;
 	couplings_effective_file.open("couplings_effective.data");
+	int l_tmp;
+	int m_tmp;
 	int l;
 	int m;
 	double distance_tmp;
@@ -929,14 +930,16 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 		couplings_effective_file >> shells_distances_tmp[r];
 
 	double matrix_coupling_tmp[number_magnetic_atoms][number_magnetic_atoms][number_magnetic_atoms];
-	for (int i = 0; i < number_magnetic_atoms; i++)
-		for (int j = 0; j < number_magnetic_atoms; j++)
-			for (int r = 0; r < number_shells; r++)
+	for (int i=0;i<number_magnetic_atoms;i++)
+		for (int j=0;j<number_magnetic_atoms;j++)
+			for (int r=0; r<number_shells;r++)
 				matrix_coupling_tmp[i][j][r] = 0;
 
 	while (couplings_effective_file.peek() != EOF)
 	{
-		couplings_effective_file >> l >> m;
+		couplings_effective_file >> l_tmp >> m_tmp;
+		l=spin_lattice->pull_ordering_from_crystal_to_magnetic()[l_tmp];
+		m=spin_lattice->pull_ordering_from_crystal_to_magnetic()[m_tmp];
 		couplings_effective_file >> coupling_tmp;
 		couplings_effective_file >> shell_tmp;
 		matrix_coupling_tmp[l][m][shell_tmp] = coupling_tmp;
@@ -946,6 +949,7 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 	int flag2;
 	int count_shell;
 	int flag1;
+	int site;
 	int flag;
 	double *magnetic_coordinates_translated;
 	double *count = new double[3];
@@ -965,6 +969,7 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 							count[2] = double(count3);
 							magnetic_coordinates_translated = function_translate(magnetic_atoms_coordinates[j], count, bravais_lattice);
 							distance = function_distance(magnetic_atoms_coordinates[i], magnetic_coordinates_translated);
+							delete[] magnetic_coordinates_translated;
 							cout << i << " " << j << " " << count[0] << " " << count[1] << " " << count[2] << " " << distance << " " << magnetic_coordinates_translated[0] << " " << magnetic_coordinates_translated[1] << " " << magnetic_coordinates_translated[2] << endl;
 							cout << "i " << magnetic_atoms_coordinates[i][0] << " " << magnetic_atoms_coordinates[i][1] << " " << magnetic_atoms_coordinates[i][2] << endl;
 							cout << "j " << magnetic_atoms_coordinates[j][0] << " " << magnetic_atoms_coordinates[j][1] << " " << magnetic_atoms_coordinates[j][2] << endl;
@@ -1028,16 +1033,15 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 									}
 								cout << "STARTING WRITING VALUES" << endl;
 								cout << "shell:" << count_shell << endl;
-								flag = Jij_lattice[i][j]->pull_empty_head();
-								cout << "flag:" << flag << endl;
 								cout << "count:" << count4[0] << " " << count4[1] << " " << count4[2] << " " << endl;
-								if (flag == 1)
+								site = Jij_lattice[i][j]->pull_site();
+								if(site < 0)
 								{
-									Jij_lattice[i][j]->fill_head(couplingmatrix_tmp, count4);
-									Jij_lattice_next[i][j] = Jij_lattice[i][j];
+									Jij_lattice[i][j]->fill_node(couplingmatrix_tmp,count4,0);
+									Jij_lattice_next[i][j]=Jij_lattice[i][j];
 								}
 								else
-									Jij_lattice_next[i][j] = Jij_lattice_next[i][j]->push_value(couplingmatrix_tmp, count4);
+									Jij_lattice_next[i][j]=Jij_lattice_next[i][j]->push_value(couplingmatrix_tmp,count4);
 							}
 						}
 			cout << "END OF PAIR EVALUATION (" << i << " " << j << ")" << endl;
@@ -1045,12 +1049,11 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 	}
 	cout << "END BUILDING" << endl;
 	/// initializing the atoms not having any coupling
-	/// ghost coupling... in order to avoid a node-matrix not equally initialized in all its entries
+	/// ghost coupling... in order to avoid a Node_list-matrix not equally initialized in all its entries
 	for (int i = 0; i < number_magnetic_atoms; i++)
 		for (int j = 0; j < number_magnetic_atoms; j++)
 		{
-			flag = Jij_lattice[i][j]->pull_empty_head();
-			if (flag == 1)
+			if(Jij_lattice_next[i][j]->pull_site()<0)
 			{
 				cout << "ECCOMI " << i << j << endl;
 				couplingmatrix_tmp = new double *[3];
@@ -1062,7 +1065,7 @@ void lattice_J::building_values(int max_distance_coupling_tmp, lattice_spin *spi
 					for (int j = 0; j < 3; j++)
 						couplingmatrix_tmp[i][j] = 0.0;
 				}
-				Jij_lattice[i][j]->fill_head(couplingmatrix_tmp, count4);
+				Jij_lattice_next[i][j]->fill_node(couplingmatrix_tmp, count4,0);
 			}
 		}
 	cout << "END THE INITIALIZATION" << endl;
@@ -1072,19 +1075,19 @@ void lattice_J::print()
 {
 	//cout << "ECCOMI NEL PRINTING" << endl;
 	int number_magnetic_atoms = spin_lattice->pull_number_magnetic_atoms();
-	node ***Jij_lattice_next;
-	Jij_lattice_next = new node **[number_magnetic_atoms];
+	Node_list ***Jij_lattice_next;
+	Jij_lattice_next = new Node_list **[number_magnetic_atoms];
 	for (int i = 0; i < number_magnetic_atoms; i++)
-		Jij_lattice_next[i] = new node *[number_magnetic_atoms];
+		Jij_lattice_next[i] = new Node_list *[number_magnetic_atoms];
 	int count;
 	//cout << "EVALUATION PAIRS" << endl;
-	for (int i = 0; i < number_magnetic_atoms; i++)
-		for (int j = 0; j < number_magnetic_atoms; j++)
+	for (int i=0;i<number_magnetic_atoms;i++)
+		for (int j=0;j<number_magnetic_atoms;j++)
 		{
 			count = 0;
 			cout << i << " " << j << endl;
 			Jij_lattice_next[i][j] = Jij_lattice[i][j];
-			while (Jij_lattice_next[i][j] != NULL)
+			while (Jij_lattice_next[i][j] != nullptr)
 			{
 				//cout << i << j << " Distance: ";
 				for (int r = 0; r < 3; r++)
@@ -1131,10 +1134,10 @@ complex<double> ****lattice_J ::pull_fft(double *kpoint_tmp)
 
 	typedef std::complex<double> C;
 
-	node ***Jij_lattice_next;
-	Jij_lattice_next = new node **[number_magnetic_atoms];
+	Node_list ***Jij_lattice_next;
+	Jij_lattice_next = new Node_list **[number_magnetic_atoms];
 	for (int i = 0; i < number_magnetic_atoms; i++)
-		Jij_lattice_next[i] = new node *[number_magnetic_atoms];
+		Jij_lattice_next[i] = new Node_list *[number_magnetic_atoms];
 
 	// int count;
 	for (int i = 0; i < number_magnetic_atoms; i++)
@@ -1148,7 +1151,7 @@ complex<double> ****lattice_J ::pull_fft(double *kpoint_tmp)
 				}
 			// cout<<i<<j<<endl;
 			Jij_lattice_next[i][j] = Jij_lattice[i][j];
-			while (Jij_lattice_next[i][j] != NULL)
+			while (Jij_lattice_next[i][j] != nullptr)
 			{
 				sum_tmp1 = 0;
 				sum_tmp2_real = 0.0;
@@ -1249,11 +1252,11 @@ private:
 public:
 	Hamiltonian_k()
 	{
-		kpoint = NULL;
-		H = NULL;
-		spin_crystal = NULL;
-		J_crystal = NULL;
-		K = NULL;
+		kpoint = nullptr;
+		H = nullptr;
+		spin_crystal = nullptr;
+		J_crystal = nullptr;
+		K = nullptr;
 		basis_dimension_H = 0;
 		//flag_only_magneticatoms = 0;
 		gap_opening = 0;
@@ -1313,7 +1316,7 @@ void Hamiltonian_k::push_values(double *kpoint_tmp, lattice_J *J_crystal_tmp, la
 	basis_dimension_H = number_magnetic_atoms_2;
 	// cout<<"fuori";
 
-	if (H == NULL)
+	if (H == nullptr)
 	{
 		// cout<<"dentro";
 		H = new complex<double> *[number_magnetic_atoms_2];
@@ -1323,7 +1326,7 @@ void Hamiltonian_k::push_values(double *kpoint_tmp, lattice_J *J_crystal_tmp, la
 
 	complex<double> ****Jij_kpos;
 	complex<double> ****Jij_kneg;
-	complex<double> ****Jij_knull;
+	complex<double> ****Jij_knullptr;
 	Jij_kpos = J_crystal->pull_fft(kpoint_tmp);
 
 	double *kpoint_tmp2;
@@ -1336,14 +1339,14 @@ void Hamiltonian_k::push_values(double *kpoint_tmp, lattice_J *J_crystal_tmp, la
 		kpoint_tmp3[i] = 0.0;
 	}
 
-	Jij_knull = J_crystal->pull_fft(kpoint_tmp3);
+	Jij_knullptr = J_crystal->pull_fft(kpoint_tmp3);
 	Jij_kneg = J_crystal->pull_fft(kpoint_tmp2);
 	delete[] (double *)kpoint_tmp2;
 	delete[] (double *)kpoint_tmp3;
 
-	for (int i = 0; i < number_magnetic_atoms; i++)
+	for (int i=0;i<number_magnetic_atoms;i++)
 	{
-		for (int j = 0; j < number_magnetic_atoms; j++)
+		for (int j=0;j<number_magnetic_atoms;j++)
 		{
 			complex<double> sum_1 = (0, 0);
 			complex<double> sum_2 = (0, 0);
@@ -1375,41 +1378,16 @@ void Hamiltonian_k::push_values(double *kpoint_tmp, lattice_J *J_crystal_tmp, la
 					sum_4 = (0, 0);
 					for (int k = 0; k < 3; k++)
 						for (int r = 0; r < 3; r++)
-							sum_4 = sum_4 + spin_crystal->pull_spin()[i].pull_orientation()[k] * Jij_knull[i][l][k][r] * spin_crystal->pull_spin()[l].pull_orientation()[r];
+							sum_4 = sum_4 + spin_crystal->pull_spin()[i].pull_orientation()[k] * Jij_knullptr[i][l][k][r] * spin_crystal->pull_spin()[l].pull_orientation()[r];
 					sum_3 = sum_3 + sum_4 * spin_crystal->pull_spin()[l].pull_modulus();
 				}
 				C[i][j] = sum_3;
 			}
 		}
 	}
-	// cout<<" A "<<endl;
-	// for (int i = 0; i < number_atoms; i++){
-	//	for (int j = 0; j < number_atoms; j++)
-	//		cout<<A[i][j]<<" ";
-	//	cout<<endl;
-	// }
-	// cout<<" B "<<endl;
-	// for (int i = 0; i < number_atoms; i++){
-	//	for (int j = 0; j < number_atoms; j++)
-	//		cout<<B[i][j]<<" ";
-	//	cout<<endl;
-	// }
-	// cout<<" C "<<endl;
-	// for (int i = 0; i < number_atoms; i++){
-	//	for (int j = 0; j < number_atoms; j++)
-	//		cout<<C[i][j]<<" ";
-	//	cout<<endl;
-	// }
-	// cout<<" Aneg "<<endl;
-	// for (int i = 0; i < number_atoms; i++){
-	//	for (int j = 0; j < number_atoms; j++)
-	//		cout<<Aneg[i][j]<<"q4 ";
-	//	cout<<endl;
-	// }
-
-	for (int i = 0; i < number_magnetic_atoms_2; i++)
+	for (int i=0;i<number_magnetic_atoms_2;i++)
 	{
-		for (int j = 0; j < number_magnetic_atoms_2; j++)
+		for (int j=0;j<number_magnetic_atoms_2;j++)
 		{
 			if ((i < number_magnetic_atoms) && (j < number_magnetic_atoms))
 			{
@@ -1432,70 +1410,13 @@ void Hamiltonian_k::push_values(double *kpoint_tmp, lattice_J *J_crystal_tmp, la
 
 	J_crystal->free_fft(Jij_kneg);
 	J_crystal->free_fft(Jij_kpos);
-	J_crystal->free_fft(Jij_knull);
+	J_crystal->free_fft(Jij_knullptr);
 };
-//
-//
-//void Hamiltonian_k::selecting_only_magneticatoms()
-//{
-//	int number_atoms = spin_crystal->pull_number_atoms();
-//	int number_magnetic_atoms = 0;
-//	int position_magnetic_atoms[number_atoms];
-//	for (int i = 0; i < number_atoms; i++)
-//	{
-//		if (spin_crystal->pull_spin()[i].pull_modulus() != 0)
-//		{
-//			number_magnetic_atoms = number_magnetic_atoms + 1;
-//			position_magnetic_atoms[i] = 1;
-//		}
-//		else
-//			position_magnetic_atoms[i] = 0;
-//	}
-//	int number_magnetic_atoms_2 = number_magnetic_atoms * 2;
-//	int stepi;
-//	int stepj;
-//	complex<double> **H_positive_definite;
-//	H_positive_definite = new complex<double> *[number_magnetic_atoms_2];
-//	for (int i = 0; i < number_magnetic_atoms_2; i++)
-//		H_positive_definite[i] = new complex<double>[number_magnetic_atoms_2];
-//
-//	int counti = 0;
-//	int countj;
-//	if (number_magnetic_atoms > 1)
-//	{
-//		for (int i = 0; i < basis_dimension_H; i++)
-//		{
-//			stepi = 0;
-//			stepj = 0;
-//			countj = 0;
-//			if (i >= number_atoms)
-//				stepi = 1;
-//			for (int j = 0; j < basis_dimension_H; j++)
-//			{
-//				if (j >= number_atoms)
-//					stepj = 1;
-//				if ((position_magnetic_atoms[i - number_atoms * stepi] == 1) && (position_magnetic_atoms[j - number_atoms * stepj] == 1))
-//				{
-//					H_positive_definite[counti][countj] = H[i][j];
-//					countj = countj + 1;
-//				}
-//			}
-//			if (countj == number_magnetic_atoms_2)
-//				counti = counti + 1;
-//		}
-//	}
-//	flag_only_magneticatoms = 1;
-//	for (int i = 0; i < basis_dimension_H; i++)
-//		delete[] (complex<double> *)H[i];
-//	delete[] (complex<double> **)H;
-//	basis_dimension_H = number_magnetic_atoms_2;
-//	H = H_positive_definite;
-//};
 
 void Hamiltonian_k ::free_Hamiltonian_k()
 {
 	int n = basis_dimension_H;
-	for (int i = 0; i < n; i++)
+	for (int i=0;i<n;i++)
 	{
 		delete[] (complex<double> *)H[i];
 		delete[] (complex<double> *)K[i];
@@ -1503,11 +1424,11 @@ void Hamiltonian_k ::free_Hamiltonian_k()
 	basis_dimension_H = 0;
 	//flag_only_magneticatoms = 0;
 	gap_opening = 0;
-	H = NULL;
-	K = NULL;
-	kpoint = NULL;
-	spin_crystal = NULL;
-	J_crystal = NULL;
+	H = nullptr;
+	K = nullptr;
+	kpoint = nullptr;
+	spin_crystal = nullptr;
+	J_crystal = nullptr;
 };
 
 void Hamiltonian_k::Cholesky_decomposition_Lapack()
@@ -1524,16 +1445,6 @@ void Hamiltonian_k::Cholesky_decomposition_Lapack()
 	for (int i = 0; i < n; i++)
 		for (int j = 0; j < n; j++)
 			H_tmp[i * n + j] = H[i][j].real() + _Complex_I * (H[i][j].imag());
-
-	// cout<<"Before any operation:"<<endl;
-	// cout<<"Hamiltonian Matrix"<<endl;
-	// for (int i = 0; i < n; i++){
-	//	for (int j = 0; j < n; j++){
-	//		cout<<lapack_complex_double_real(H_tmp[i*n+j])<<" +i("<<lapack_complex_double_imag(H_tmp[i*n+j])<<") | ";
-	//	}
-	//	cout<<endl;
-	// }
-	// cout<<endl;
 
 	// calculating the eigenvalues to check if the matrix is positive difined
 	// this function is also calculating the Schur form
@@ -1555,97 +1466,81 @@ void Hamiltonian_k::Cholesky_decomposition_Lapack()
 	LDA = n;
 	LDVS = n;
 
-	INFO = LAPACKE_zgees(matrix_layout, JOBVS, SORT, SELECT, N, H_tmp, LDA, SDIM, W, VS, LDVS);
+	INFO = LAPACKE_zgees(matrix_layout, JOBVS, SORT, SELECT, N, H_tmp, LDA, SDIM, W, VS, LDVS);	
+	cout<<"Info pre-Cholesky "<<INFO<<endl;
+
 	free(SDIM);
 	free(VS);
-	// cout<<"Result of the diagonalization procedure: "<<INFO<<endl;
-	// cout<<endl;
-	// cout<<"Schur form: "<<endl;
-	// for (int i=0;i<n;i++){
-	//	for (int j=0;j<n;j++){
-	//		if(i>=j)
-	//		cout<<lapack_complex_double_real(H_tmp[i*n+j])<<" +i("<<lapack_complex_double_imag(H_tmp[i*n+j])<<") | ";
-	//		else
-	//		cout<<0<<" +i("<<0<<") | ";
-	//	}
-	//	cout<<endl;
-	// }
-	// cout<<endl;
-	// cout<<"Eigenvalues: "<<endl;
-	// for (int i = 0; i < n; i++){
-	//	cout<<lapack_complex_double_real(W[i])<<" +i("<<lapack_complex_double_imag(W[i])<<") ";
-	// }
 	double positiveness = 1;
 	for (int i = 0; i < n; i++)
 		positiveness = positiveness * lapack_complex_double_real(W[i]);
+	cout<<"determinant: "<<positiveness<<endl;
 	int flag = 0;
 	if (positiveness > 0)
 	{
-		// cout<<"Positive Defined "<<endl;
+		cout<<"Positive defined "<<endl;
 		flag = 1;
 	}
 	else if (positiveness == 0)
-		cout << "Semi - Defined " << endl;
-	else
 	{
-		// cout<<"Negative Defined "<<endl;
+		cout <<"Semi defined" << endl;
 		flag = 2;
 	}
+	else
+	{
+		cout<<"Negative defined "<<endl;
+		flag = 3;
+	}
 
-	if (flag > 0)
+	for (int i = 0; i < n; i++)
+		for (int j = 0; j < n; j++)
+			H_tmp[i * n + j] = H[i][j].real() + _Complex_I * (H[i][j].imag());
+
+	if (flag > 1)
 	{
 		for (int i = 0; i < n; i++)
 			for (int j = 0; j < n; j++)
-				H_tmp[i * n + j] = H[i][j].real() + _Complex_I * (H[i][j].imag());
-		if (flag == 2)
-		{
-			for (int i = 0; i < n; i++)
-				for (int j = 0; j < n; j++)
-					H_tmp[i * n + j] = (-1) * H_tmp[i * n + j];
-		}
-
-		char UPLO = 'L';
-		LAPACKE_zpotrf(matrix_layout, UPLO, N, H_tmp, LDA);
-		typedef std::complex<double> C;
-		for (int i = 0; i < n; i++)
-			for (int j = 0; j < n; j++)
-			{
-				if (i >= j)
-				{
-					L_tot[i][j].real(lapack_complex_double_real(H_tmp[i * n + j]));
-					L_tot[i][j].imag(lapack_complex_double_imag(H_tmp[i * n + j]));
-				}
-				else
-					L_tot[i][j] = C(0, 0);
-			}
-		// cout<<"Triangular matrix:"<<endl;
-		// for (int i = 0; i < n; i++){
-		//	for (int j = 0; j < n; j++)
-		//		cout<< L_tot[i][j].real() <<" +i( "<< L_tot[i][j].imag() <<") | ";
-		//	cout<<endl;
-		// }
-		// cout<<endl;
-		complex<double> L_tot_T[n][n];
-		for (int i = 0; i < n; i++)
-			for (int j = 0; j < n; j++)
-				L_tot_T[i][j] = L_tot[j][i];
-
-		// complex<double> M[n][n];
-		// typedef std::complex<double> C;
-		// cout<<"Testing Cholesky decomposition (should be 0)"<<endl;
-		// for (int i = 0; i < n; i++){
-		//	for (int j = 0; j < n; j++){
-		//		M[i][j]=C(0,0);
-		//		for(int k =0; k < n ; k++)
-		//			M[i][j]=M[i][j]+L_tot[i][k]*conj(L_tot_T[k][j]);
-		//	cout<<M[i][j]-H[i][j]<<" ";
-		//	}
-		// cout<<endl;
-		// }
+				H_tmp[i * n + j] = (-1) * lapack_complex_double_real(H_tmp[i * n + j]) + _Complex_I * (lapack_complex_double_imag(H_tmp[i * n +j]));
 	}
-	else
-		throw std::system_error{errno, std::generic_category(), "Failing Cholesky"};
 
+	char UPLO = 'U';
+	INFO=LAPACKE_zpotrf2(matrix_layout, UPLO, N, H_tmp, LDA);
+	cout<<"Info Cholesky "<<INFO<<endl;
+
+	//double cycle_tmp=1;
+	//int INFO2=INFO;
+	//cout<<"Other attempt"<<endl;
+	//while((INFO2>0)&&(cycle_tmp<=sqrt(INFO))){
+	//	for (int i = 0; i < n; i++)
+	//		for (int j = 0; j < n; j++){
+	//			if((i<int(cycle_tmp))&&(j<int(cycle_tmp)))
+	//				H_tmp[i * n + j] = (-1)*(H[i][j].real()) + _Complex_I * (H[i][j].imag());
+	//			else
+	//				H_tmp[i * n + j] = (H[i][j].real()) + _Complex_I * (H[i][j].imag());
+	//		}
+	//	INFO2=LAPACKE_zpotrf2(matrix_layout, UPLO, N, H_tmp, LDA);
+	//	cout<<"Info Cholesky "<<INFO2<<endl;
+	//	cycle_tmp=cycle_tmp+1;
+	//}
+	
+
+	typedef std::complex<double> C;
+	for (int i = 0; i < n; i++)
+		for (int j = 0; j < n; j++)
+		{
+			if (j >= i)
+			{
+				L_tot[i][j].real(lapack_complex_double_real(H_tmp[i * n + j]));
+				L_tot[i][j].imag(lapack_complex_double_imag(H_tmp[i * n + j]));
+			}
+			else
+				L_tot[i][j] = C(0, 0);
+		}
+	complex<double> L_tot_T[n][n];
+	for (int i = 0; i < n; i++)
+		for (int j = 0; j < n; j++)
+			L_tot_T[i][j] = L_tot[j][i];
+	
 	free(H_tmp);
 	free(W);
 	K = L_tot;
@@ -1692,8 +1587,8 @@ void Hamiltonian_k::checking_Cholesky()
 		{
 			M[i][j] = C(0, 0);
 			for (int k = 0; k < n; k++)
-				M[i][j] = M[i][j] + K[i][k] * conj(K[j][k]);
-			cout << M[i][j] << " ";
+				M[i][j] = M[i][j] + conj(K[k][i]) * (K[k][j]);
+			cout << M[i][j].real() << " ";
 		}
 		cout << endl;
 	}
@@ -1711,10 +1606,9 @@ void Hamiltonian_k::checking_Cholesky()
 
 double *Hamiltonian_k::eigenvalues()
 {
-	/// the corresponding procedure using Eigen library is commented
 	try
 	{
-		if (K == NULL)
+		if (K == nullptr)
 			throw 1;
 	}
 	catch (int tmp)
@@ -1751,25 +1645,6 @@ double *Hamiltonian_k::eigenvalues()
 				g[i][j].real(0.0);
 		}
 
-	// cout<<"Magnetic Hamiltonian"<<endl;
-	// for (int i = 0;i<n;i++){
-	//	for (int j = 0;j<n;j++)
-	//		cout<<H[i][j]<<" ";
-	//	cout<<endl;
-	// }
-	// cout<<"Triangular Matrix"<<endl;
-	// for (int i = 0;i<n;i++){
-	//	for (int j = 0;j<n;j++)
-	//		cout<<K[i][j]<<" ";
-	//	cout<<endl;
-	// }
-	// cout<<"Bosonic Metric"<<endl;
-	// for (int i = 0;i<n;i++){
-	//	for (int j = 0;j<n;j++)
-	//		cout<<g[i][j]<<" ";
-	//	cout<<endl;
-	// }
-
 	/// applying the Colpa method to preserve bosonic commutation operations
 	for (int i = 0; i < n; i++)
 		for (int j = 0; j < n; j++)
@@ -1777,136 +1652,101 @@ double *Hamiltonian_k::eigenvalues()
 				for (int m = 0; m < n; m++)
 					bosonic_H[i][j] = bosonic_H[i][j] + K[i][l] * g[l][m] * conj(K[j][m]);
 
-	// cout<<"Bosonic Hamiltonian"<<endl;
-	// for (int i = 0;i<n;i++){
-	//	for (int j = 0;j<n;j++)
+	//for (int i = 0;i<n; i++){
+	//	for (int j = 0;j<n; j++)
 	//		cout<<bosonic_H[i][j]<<" ";
 	//	cout<<endl;
-	// }
-	// cout<<endl;
+	//}
 
-	// Eigen::MatrixXcd temporary(n, n);
-	// typedef std::complex<double> C;
 	lapack_complex_double *temporary;
-	temporary = new lapack_complex_double[n * n];
-	for (int i = 0; i < n; i++)
-		for (int j = 0; j < n; j++)
-		{
-			// temporary(i,j) = C(bosonic_H[i][j].real(), bosonic_H[i][j].imag());
-			temporary[i * n + j] = bosonic_H[i][j].real() + _Complex_I * (H[i][j].imag());
-		}
-	// cout<<"checking correct saving of the bosonic hamiltonian"<<endl;
-	// for (int i = 0;i<n;i++){
-	//	cout<<" | ";
-	//	for (int j = 0;j<n;j++)
-	//		cout<<" "<<lapack_complex_double_real(temporary[i*n+j])<<" +i("<<lapack_complex_double_imag(temporary[i*n+j])<<") |";
-	//	cout<<endl;
-	// }
+	temporary = (lapack_complex_double*) malloc(n*n*sizeof(lapack_complex_double));
+
+	for (int i = 0;i<n; i++){
+		for (int j = 0;j<n; j++)
+			temporary[i * n + j]= bosonic_H[i][j].real()+ _Complex_I*(bosonic_H[i][j].imag());
+	}
 
 	for (int i = 0; i < n; i++)
 		delete[] (complex<double> *)bosonic_H[i];
 	delete[] (complex<double> **)bosonic_H;
+	
+
+	int N=n;
+	int LDA=n;
+	int matrix_layout=101;
+	int INFO;
+	lapack_complex_double *W; 
+	char JOBVL = 'N'; char JOBVR = 'N';
+	lapack_complex_double *VL; lapack_complex_double *VR;
+	int LDVL=1; int LDVR=1;
+	W = (lapack_complex_double *)malloc(n * sizeof(lapack_complex_double));
+
+	INFO=LAPACKE_zgeev(matrix_layout,JOBVL,JOBVR,N,temporary,LDA,W,VL,LDVL,VR,LDVR);
+	
+	cout<<"RESULTS"<<endl;
+	for (int i = 0; i < n; i++)
+		cout<<lapack_complex_double_real(W[i])<<" ";
+	cout<<endl;
+
+	int check=0;
+	for(int i=0;i<n;i++){
+		//cout<<lapack_complex_double_real(W[i])<<" "<<lapack_complex_double_imag(W[i])<<" ";
+		if(lapack_complex_double_real(W[i])<0){
+			W[i]=(-1)*lapack_complex_double_real(W[i])+ _Complex_I*(lapack_complex_double_imag(W[i]));
+			check++;
+		}	
+	}
+
+	cout<<endl;
+
+	if (check>n_2){
+		cout<<"negative definite hamiltonian"<<endl;
+		for (int i = 0; i < n; i++)
+			for (int j = 0; j < n; j++)
+				temporary[i * n + j]=(-1)*lapack_complex_double_real(temporary[i * n + j])+_Complex_I*(lapack_complex_double_imag(temporary[i * n + j]));
+		INFO=LAPACKE_zgeev(matrix_layout,JOBVL,JOBVR,N,temporary,LDA,W,VL,LDVL,VR,LDVR);
+		check=0;
+		for(int i=0;i<n;i++)
+			if(lapack_complex_double_real(W[i])<0){
+				W[i]=(-1)*lapack_complex_double_real(W[i])+ _Complex_I*(lapack_complex_double_imag(W[i]));
+				check++;
+			}
+		if (check>n_2)
+			cout<<"problem diagonalization"<<endl;
+	}else if(check<n_2)
+		cout<<"increase epsilon"<<endl;
+	else
+		cout<<"positive definite hamiltonian"<<endl;
+
+	delete[] (lapack_complex_double *)temporary;
+	double* WR=new double[n];	
+	for(int i=0;i<n;i++)
+		WR[i]=lapack_complex_double_real(W[i]);	
+	
+	mergeSort(WR, 0, n - 1);
+	
+	double *w_final;
+	w_final = new double[n_2];
+	int counting=0;
+	for (int i = 0; i < n; i++){
+		if(i%2==0){
+			w_final[counting] = WR[i];
+			counting++;
+		}
+	}
+	free(W);
+	free(WR);
 	for (int i = 0; i < n; i++)
 		delete[] (complex<double> *)g[i];
 	delete[] (complex<double> **)g;
-
-	// char JOBVS='N'; char SORT='N';
-	// LAPACK_Z_SELECT1 SELECT;
-	// int* SDIM;
-	// char JOBVL='N'; char JOBVR='N';
-	int N;
-	int LDA; // int LDVL; int LDVS; int LDVR;
-	int matrix_layout = 101;
-	int INFO;
-	// lapack_complex_double* W;
-
-	double *WR;
-	char JOBZ = 'N';
-	char UPLO = 'L';
-	// lapack_complex_double* VR;
-	// lapack_complex_double* VL;
-	// lapack_complex_double* VS;
-	// VS=(lapack_complex_double*)malloc(n*n*sizeof(lapack_complex_double));
-	// W=(lapack_complex_double*)malloc(n*sizeof(lapack_complex_double));
-	WR = (double *)malloc(n * sizeof(double));
-	// SDIM=(int*)malloc(sizeof(int));
-	N = n;
-	LDA = n; // LDVL=1; //LDVR=1;
-
-	// for (int i = 0;i<n; i++){
-	//	for (int j = 0;j<n; j++)
-	//		cout<<lapack_complex_double_real(temporary[i*n+j])<<" +i("<<lapack_complex_double_imag(temporary[i*n+j])<<")| ";
-	//	cout<<endl;
-	// }
-
-	// LDVS=n;
-	// INFO=LAPACKE_zgees(matrix_layout,JOBVS,SORT,SELECT,N,temporary,LDA,SDIM,W,VS,LDVS);
-	// INFO=LAPACKE_zgeev(matrix_layout,JOBVL,JOBVR,N,temporary,LDA,W,VL,LDVL,VR,LDVR);
-	/// diagonalization routine for Hermitian Matrices
-	INFO = LAPACKE_zheev(matrix_layout, JOBZ, UPLO, N, temporary, LDA, WR);
-
-	// Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver;
-	// solver.compute(temporary);
-
-	/// saving the eigen-solutions of the diagonalization procedure
-	// Eigen::MatrixXcd w_tmp = solver.eigenvalues();
-
-	// typedef std::complex<double> C;
-	// complex<double>* w= new complex<double>[n];
-	// cout<<"Eigenvalues";
-	// cout<<"|";
-	// for(int i = 0; i < n; i++)
-	//			cout<<C(lapack_complex_double_real(W[i]),lapack_complex_double_imag(W[i]));
-	//	cout<<WR[i]<<" ";
-	// cout<<endl;
-	// for (int i = 0; i < n; i++){
-	//	w[i] = C(lapack_complex_double_real(W[i]),lapack_complex_double_imag(W[i]));
-	//	///here I am multiplying to g[i][j]
-	//	//if(w[i].real()<0)
-	//	//	w[i].real((-1)*w[i].real());
-	//	//cout<<w[i].real()<<"+i("<<w[i].imag()<<")|";
-	// }
-	delete[] (lapack_complex_double *)temporary;
-	// free(W); //free(VS);
-	/// following the notation of Colpa H=(1/2)(H(k)+H(-k))
-	/// considering the solutions = 1/2(omega_++omega_-)
-	/// Hermitian matrix --> Real Solutions
-	// double* w_tmp;
-	// w_tmp=new double[n];
-	// for (int i = 0; i < n; i++)
-	// cout<<WR[i]<<endl;
-	//	w_tmp[i]=W[i];
-	//}
-	// delete[](double*) w;
-	// cout<<"Ordering Real Part"<<endl;
-
-	mergeSort(WR, 0, n - 1);
-
-	// for (int i = 0; i < n; i++)
-	//	cout<<WR[i]<<" ";
-	// cout<<endl;
-
-	/// multiplying to g
-	for (int i = 0; i < n_2; i++)
-		WR[i] = WR[i] * (-1);
-
-	double *w_final;
-	w_final = new double[n_2];
-	// cout<<"Magnons"<<endl;
-	for (int i = 0; i < n_2; i++)
-		w_final[i] = WR[i];
-	// cout<<endl;
-	// delete[] w_tmp;
-	free(WR);
 	return w_final;
 };
 
 complex<double> **Hamiltonian_k::eigenvectors()
 {
-	/// the corresponding procedure using Eigen library is commented
 	try
 	{
-		if (K == NULL)
+		if (K == nullptr)
 			throw 1;
 	}
 	catch (int tmp)
@@ -2092,9 +1932,9 @@ public:
 	K_points()
 	{
 		number_special_k_points = 0;
-		special_k_points = NULL;
-		list_k_points = NULL;
-		steps_k_points = NULL;
+		special_k_points = nullptr;
+		list_k_points = nullptr;
+		steps_k_points = nullptr;
 		total_number_k_points = 0;
 	}
 	void push_values(ifstream *k_points_file_tmp);
@@ -2112,7 +1952,7 @@ void K_points::push_values(ifstream *k_points_file_tmp)
 {
 	try
 	{
-		if (k_points_file_tmp == NULL)
+		if (k_points_file_tmp == nullptr)
 			throw 1;
 	}
 	catch (int flag)
@@ -2142,13 +1982,6 @@ void K_points::push_values(ifstream *k_points_file_tmp)
 		*k_points_file_tmp >> steps_k_points[m];
 		total_number_k_points = total_number_k_points + steps_k_points[m];
 	}
-
-	// for(int m=0;m<number_special_k_points;m++)
-	//	for(int l=0;l<3;l++)
-	//		cout<<special_k_points[m][l]<<" ";
-	// total_number_k_points=total_number_k_points+1;
-	// cout<<number_special_k_points<<" "<<total_number_k_points<<" ";
-	// cout<<endl;
 
 	total_number_k_points++;
 	list_k_points = new double *[total_number_k_points];
@@ -2182,8 +2015,8 @@ public:
 	K_points_grid()
 	{
 		spacing = 0;
-		vector_reciprocal = NULL;
-		k_point_grid = NULL;
+		vector_reciprocal = nullptr;
+		k_point_grid = nullptr;
 		shift = new double[3];
 		for (int i = 0; i < 3; i++)
 		{
@@ -2251,14 +2084,8 @@ void K_points_grid::K_points_grid_push_values(lattice_crystal *lattice_crystal_t
 	}
 
 	for (int i = 0; i < 2; i++)
-	{
 		for (int j = 0; j < 3; j++)
-		{
 			vector_reciprocal[i][j] = factor * vector_reciprocal[i][j];
-			// cout<<vector_reciprocal[i][j]<<" ";
-		}
-		// cout<<endl;
-	}
 
 	/// while the kpoints are in units of 1/a.u. the shift is in units of the spacing
 	number_k_points[0] = (function_module(vector_reciprocal[0]) / spacing);
@@ -2276,11 +2103,8 @@ void K_points_grid::K_points_grid_push_values(lattice_crystal *lattice_crystal_t
 
 	for (int i = 0; i < number_k_points[0]; i++)
 		for (int j = 0; j < number_k_points[1]; j++)
-		{
-			// cout<<i<<j<<endl;
 			for (int r = 0; r < 3; r++)
 				k_point_grid[i][j][r] = ((double)i / number_k_points[0]) * (shift[r] + vector_reciprocal[0][r]) + ((double)j / number_k_points[1]) * (shift[r] + vector_reciprocal[1][r]);
-		}
 };
 
 void K_points_grid::K_points_grid_print()
@@ -2301,7 +2125,6 @@ void K_points_grid::K_points_grid_print()
 ///////// END DEFINITION CLASS K_POINT GRID USED TO CALCULATE BERRY CURVATURE
 
 ///////// START DEFINITION CLASS BERRY CURVATURE
-///////// START DEFINITION CLASS BERRY CURVATURE
 class Berry_curvature
 {
 private:
@@ -2315,18 +2138,18 @@ private:
 public:
 	Berry_curvature()
 	{
-		K_grid = NULL;
+		K_grid = nullptr;
 		O_basis_dimension = 0;
-		Crystal_spin = NULL;
-		Crystal_J = NULL;
-		Omega = NULL;
+		Crystal_spin = nullptr;
+		Crystal_J = nullptr;
+		Omega = nullptr;
 	};
-	void Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp);
+	void Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp, int band_number);
 	void Berry_curvature_print(ofstream *Re_Omega_file, ofstream *Im_Omega_file);
-	complex<double> Berry_curvature_k(double *k_point);
+	complex<double> Berry_curvature_k(double *k_point,int number_band);
 };
 
-void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp)
+void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, lattice_J *Crystal_J_tmp, lattice_spin *Crystal_spin_tmp, double *epsilon_tmp, int band_number)
 {
 	K_grid = K_grid_tmp;
 	Crystal_J = Crystal_J_tmp;
@@ -2341,12 +2164,35 @@ void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, la
 	int k0 = number_k_points[0];
 	int k1 = number_k_points[1];
 
+	double *k_point = new double[3];
+
+	complex<double> ****uk;
+	uk = new complex<double>*** [k0];
+	for (int i = 0; i < k0; i++){
+		uk[i]=new complex<double>**[k1];
+	}
+	
+	Hamiltonian_k *Hk;
+	Hk = new Hamiltonian_k[1];
+	
+	for (int i = 0; i < k0; i++)
+		for (int j = 0; j < k1; j++){
+			Hk->push_values(K_grid->K_points_grid_get_values_grid(i,j), Crystal_J, Crystal_spin);
+			Hk->push_gap(epsilon);
+			Hk->Cholesky_decomposition_Lapack();
+			uk[i][j] = Hk->eigenvectors();
+			Hk->free_Hamiltonian_k();
+		}
+
 	Omega = new complex<double> **[k0];
 	for (int i = 0; i < k0; i++){
 		Omega[i] = new complex<double>*[k1];
 		for (int j = 0; j < k1; j++)
-			Omega[i][j] = new complex<double>[n_2];
+			Omega[i][j]=new complex<double>[n_2];
 	}
+
+	complex<double> ***uk_tmp;
+	uk_tmp = new complex<double>**[4];
 
 	complex<double> **phase1;
 	phase1 = new complex<double> *[n_2];
@@ -2369,85 +2215,55 @@ void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, la
 	complex<double> phase3_tmp;
 	complex<double> phase4_tmp;
 
-	double *k_point_path[4];
-	for (int i = 0; i < 4; i++)
-		k_point_path[i] = new double[3];
-
-	Hamiltonian_k *Hk;
-	Hk = new Hamiltonian_k[1];
-
-	complex<double> ****uk_tmp;
-	uk_tmp = new complex<double>*** [k0];
-	for(int i=0; i<k0; i++)
-		uk_tmp[i] = new complex<double>** [k1];
-
-	complex<double> ***uk;
-	uk = new complex<double>** [4];
-	
-	double* k_point_tmp;
-	#pragma omp parallel for
-	for (int i = 0; i < k0; i++)
-		for (int j = 0; j < k1; j++){
-			cout << i << " / " << k0 << endl;
-			//cout<<j<<" / "<<k1<<endl;
-			k_point_tmp=K_grid->K_points_grid_get_values_grid(i, j);
-			Hk->push_values(k_point_tmp, Crystal_J, Crystal_spin);
-			Hk->push_gap(epsilon);
-			Hk->Cholesky_decomposition_Lapack();
-			uk_tmp[i][j] = Hk->eigenvectors();
-			//Hk->free_Hamiltonian_k();
-	}
-	// cout<<"BEGIN"<<endl;
-	//#pragma omp parallel for
 	for (int i = 0; i < k0; i++)
 		for (int j = 0; j < k1; j++)
 		{
 			cout << i << " / " << k0 << endl;
-			cout<<j<<" / "<<k1<<endl;
+			// cout<<j<<" / "<<k1<<endl;
 			//		////periodic boundary conditions
 			if ((i < number_k_points[1] - 1) && (j < number_k_points[0] - 1))
 			{
-				uk[0] = uk_tmp[i][j];
-				uk[3] = uk_tmp[i][j+1];
-				uk[2] = uk_tmp[i+1][j+1];
-				uk[1] = uk_tmp[i+1][j];
+				uk_tmp[0] = uk[i][j];
+				uk_tmp[3] = uk[i][j + 1];
+				uk_tmp[2] = uk[i + 1][j+1];
+				uk_tmp[1] = uk[i + 1][j];
 			}
 			else if ((i < number_k_points[1] - 1) && (j == number_k_points[1] - 1))
 			{
-				uk[0] = uk_tmp[i][j];
-				uk[3] = uk_tmp[i][0];
-				uk[2] = uk_tmp[i+1][0];
-				uk[1] = uk_tmp[i+1][j];
+				uk_tmp[0] = uk[i][j];
+				uk_tmp[3] = uk[i][0];
+				uk_tmp[2] = uk[i + 1][0];
+				uk_tmp[1] = uk[i + 1][j];
 			}
-			else if ((j < number_k_points[1] - 1) && (i == number_k_points[1] - 1))
+			else if ((i == number_k_points[1] - 1) && (j < number_k_points[1] - 1))
 			{
-				uk[0] = uk_tmp[i][j];
-				uk[3] = uk_tmp[i][j+1];
-				uk[2] = uk_tmp[0][j+1];
-				uk[1] = uk_tmp[0][j];
+				uk_tmp[0] = uk[i][j];
+				uk_tmp[3] = uk[i][j + 1];
+				uk_tmp[2] = uk[0][j + 1];
+				uk_tmp[1] = uk[0][j];
 			}
 			else
 			{
-				uk[0] = uk_tmp[i][j];
-				uk[3] = uk_tmp[i][0];
-				uk[2] = uk_tmp[0][0];
-				uk[1] = uk_tmp[0][j];
+				uk_tmp[0] = uk[i][j];
+				uk_tmp[3] = uk[i][0];
+				uk_tmp[2] = uk[0][0];
+				uk_tmp[1] = uk[0][j];
 			}
-
 			for (int l = 0; l < n_2; l++)
 				for (int m = 0; m < n_2; m++)
 				{
-					phase1[l][m] = function_scalar_product_2(uk[0], uk[1], l, m, n_2);
-					phase2[l][m] = function_scalar_product_2(uk[1], uk[2], l, m, n_2);
-					phase3[l][m] = function_scalar_product_2(uk[3], uk[2], l, m, n_2);
-					phase4[l][m] = function_scalar_product_2(uk[3], uk[0], l, m, n_2);
+					phase1[l][m] = function_scalar_product_2(uk_tmp[0], uk_tmp[1], l, m, n_2);
+					phase2[l][m] = function_scalar_product_2(uk_tmp[1], uk_tmp[2], l, m, n_2);
+					phase3[l][m] = function_scalar_product_2(uk_tmp[3], uk_tmp[2], l, m, n_2);
+					phase4[l][m] = function_scalar_product_2(uk_tmp[3], uk_tmp[0], l, m, n_2);
 				}
-			for (int r =0; r<n_2;r++){
-				phase1_tmp = function_quantum_of_phase(arg(phase1[r][r]));
-				phase2_tmp = function_quantum_of_phase(arg(phase2[r][r]));
-				phase3_tmp = function_quantum_of_phase(arg(phase3[r][r]));
-				phase4_tmp = function_quantum_of_phase(arg(phase4[r][r]));
-				Omega[i][j][r] = phase1_tmp + phase2_tmp - phase3_tmp - phase4_tmp;
+			
+			for(int l=0;l<n_2;l++){
+				phase1_tmp = function_quantum_of_phase(arg(phase1[i][i]));
+				phase2_tmp = function_quantum_of_phase(arg(phase2[i][i]));
+				phase3_tmp = function_quantum_of_phase(arg(phase3[i][i]));
+				phase4_tmp = function_quantum_of_phase(arg(phase4[i][i]));
+				Omega[i][j][l] = phase1_tmp + phase2_tmp - phase3_tmp - phase4_tmp;
 			}
 		}
 
@@ -2469,7 +2285,7 @@ void Berry_curvature ::Berry_curvature_push_values(K_points_grid *K_grid_tmp, la
 	delete[] Hk;
 };
 
-complex<double>* Berry_curvature ::Berry_curvature_k(double *k_point)
+complex<double> Berry_curvature ::Berry_curvature_k(double *k_point,int number_band)
 {
 	////finding the k points nearer to the input k_point and doing an interpolation
 	///(the interpolation is done considering only a part of the k points around, because of the laziness of the programmer to consider all the cases)
@@ -2486,8 +2302,8 @@ complex<double>* Berry_curvature ::Berry_curvature_k(double *k_point)
 	int j = (int)(k_point_tmp[1] / K_grid->K_points_grid_get_vaues_spacing());
 	int k0 = K_grid->K_points_grid_get_number_k_points()[0];
 	int k1 = K_grid->K_points_grid_get_number_k_points()[1];
-	
-	return Omega[i][j];
+
+	return Omega[i][j][number_band];
 };
 
 void Berry_curvature ::Berry_curvature_print(ofstream *Re_Omega_file, ofstream *Im_Omega_file)
@@ -2496,18 +2312,19 @@ void Berry_curvature ::Berry_curvature_print(ofstream *Re_Omega_file, ofstream *
 	for (int i = 0; i < number_k_points[0]; i++)
 	{
 		for (int j = 0; j < number_k_points[1]; j++)
-			for (int r =0; r< O_basis_dimension/2;r++){
-				(*Re_Omega_file) << i << " " << j << " " << Omega[i][j][r].real() << endl;
-				(*Im_Omega_file) << i << " " << j << " " << Omega[i][j][r].imag() << endl;
+		{
+			for (int r=0; r< O_basis_dimension/2;r++){
+				(*Re_Omega_file) << i << " " << j << " " << Omega[i][j][r].real()<<endl;
+				(*Im_Omega_file) << i << " " << j << " " << Omega[i][j][r].imag()<<endl;
 			}
+		}
 		(*Re_Omega_file) << endl;
 		(*Im_Omega_file) << endl;
 	}
 };
 ///////// END DEFINITION CLASS BERRY CURVATURE
 
-int main()
-{
+int main(){
 	////START CONSTRUCTION CRYSTAL
 	////atoms coordinates are in the same units of the bravais lattice vectors
 	/////// remind to write also the files spin.txt coupling.txt atoms.txt and so on... before running the program
@@ -2530,9 +2347,16 @@ int main()
 	crystal_spin.push_values(&crystal, &atoms_spins_file);
 	atoms_spins_file.close();
 	//crystal_spin.print();
+	int number_atoms=crystal.pull_number_atoms();
+	for(int i=0;i<number_atoms;i++)
+		cout<<i<<" "<<crystal_spin.pull_ordering_from_crystal_to_magnetic()[i]<<endl;
+	int number_magnetic_atoms=crystal_spin.pull_number_magnetic_atoms();
+	for(int i=0;i<number_magnetic_atoms;i++)
+		cout<<i<<" "<<crystal_spin.pull_ordering_from_magnetic_to_crystal()[i]<<endl;
+	//int number_magnetic_atoms=crystal_spin.pull_number_magnetic_atoms();
 	///// inizializzazione di questo oggetto richiede un file coupling.txt
 	///// coupling.txt ==  elemento 1 (elementi indicati con un indice 0,1,2,...)| elemento 2 | distanza coupling (in angstrom) | J_value(isotropic)
-	double max_distance_coupling = 10.000;
+	double max_distance_coupling = 6.000;
 	lattice_J crystal_J;
 	ifstream couplings_file;
 	couplings_file.open("couplings.data");
@@ -2544,39 +2368,39 @@ int main()
 	////END CONSTRUCTION CRYSTAL
 
 	//////START STUDYING THE DIAGONALIZATION FOR ONE K POINT (000)
-	//////THIS PART IS NEEDED TO DEFINE THE BASIS OF ONLY MAGNETIC ATOMS (FOR BERRY PHASE)
-	//double *k_point;
-	//k_point = new double[3];
-	//k_point[0] = 0.0;
-	//k_point[1] = 1.0;
-	//k_point[2] = 0.0;
+	////////THIS PART IS NEEDED TO DEFINE THE BASIS OF ONLY MAGNETIC ATOMS (FOR BERRY PHASE)
+	double *k_point;
+	k_point = new double[3];
+	k_point[0] = 0.0;
+	k_point[1] = 1.0;
+	k_point[2] = 0.0;
 	////////crystal_J.print_fft(k_point);
-	//Hamiltonian_k Hk;
-	//Hk.push_values(k_point, &crystal_J, &crystal_spin);
-	//Hk.print();
+	Hamiltonian_k Hk;
+	Hk.push_values(k_point, &crystal_J, &crystal_spin);
+	Hk.print();
 	//Hk.selecting_only_magneticatoms();
 	double *epsilon = new double;
-	*epsilon = 0.001;
-	//Hk.push_gap(epsilon);
-	//Hk.print();
-	//Hk.Cholesky_decomposition_Lapack();
-	//cout<<"Magnons for k: "<<k_point[0]<< k_point[1]<< k_point[2]<<endl;
-	//double* w_k;
-	//int number_magnetic_atoms;
-	//number_magnetic_atoms=Hk.pull_basis_dimension()/2;
-	//w_k=Hk.eigenvalues();
-	//for(int i=0;i<number_magnetic_atoms;i++)
-	//	cout<<w_k[i]<<" ";
-	//	cout<<endl;
-	//complex<double> **uk;
-	//uk = Hk.eigenvectors();
-	//for (int j = 0; j < number_magnetic_atoms; j++)
-	//{
-	//	for (int i = 0; i < number_magnetic_atoms; i++)
-	//		cout << uk[i][j] << " ";
-	//	cout << endl;
-	//}
-	//////END STUDYING THE DIAGONALIZATION FOR ONE K POINT
+	///2.7 needed in order to avoid immaginary solutions
+	*epsilon = 2.7;
+	Hk.push_gap(epsilon);
+	Hk.print();
+	Hk.Cholesky_decomposition_Lapack();
+	Hk.checking_Cholesky();
+	cout<<"Magnons for k: "<<k_point[0]<< k_point[1]<< k_point[2]<<endl;
+	double* w_k;
+	w_k=Hk.eigenvalues();
+	for(int i=0;i<number_magnetic_atoms;i++)
+		cout<<w_k[i]<<" ";
+	cout<<endl;
+	////complex<double> **uk;
+	////uk = Hk.eigenvectors();
+	////for (int j = 0; j < number_magnetic_atoms; j++)
+	////{
+	////	for (int i = 0; i < number_magnetic_atoms; i++)
+	////		cout << uk[i][j] << " ";
+	////	cout << endl;
+	////}
+	////////END STUDYING THE DIAGONALIZATION FOR ONE K POINT
 
 	//////TEST DETERMINANT
 	// cout<<"TEST DETERMINANT"<<endl;
@@ -2595,95 +2419,88 @@ int main()
 	// K2 5
 	/// K3 0 	k1,4points..,K2,5points,K3
 	/// initializing k points list of the path
-//	ifstream k_points_file_tmp;
-//	k_points_file_tmp.open("kpoints.data");
-//	K_points k_points;
-//	k_points.push_values(&k_points_file_tmp);
-//	k_points_file_tmp.close();
-//	double **list_k_points;
-//	list_k_points = k_points.pull_list_k_points();
-//	int number_k_points;
-//	number_k_points = k_points.pull_total_number_k_points();
-//	cout<<"List of K points: "<<endl;
-//	for(int i=0;i<number_k_points;i++){
-//		for(int r=0;r<3;r++)
-//			cout<<list_k_points[i][r]<<" ";
-//		cout<<endl;
-//	}
-//	//// calculating bands along the k path underlined in the file k_points_file
-//	// saving the bands in the file magnons.data
-//	double **w;
-//	w = new double *[number_k_points];
-//	ofstream magnons_file_tmp;
-//	magnons_file_tmp.open("magnons.data");
-//	Hamiltonian_k *H;
-//	H = new Hamiltonian_k[number_k_points];
-//	complex<double> ***u;
-//	u = new complex<double> **[number_k_points];
-//	double *epsilon = new double;
-//	*epsilon = 0.0000001;
-//	int number_magnetic_atoms=crystal_spin.pull_number_magnetic_atoms();
-//	//// parallelizing on the k calculations
-//	#pragma omp parallel for
-//	for (int i = 0; i < number_k_points; i++)
-//	{
-//		w[i] = new double[number_magnetic_atoms];
-//		H[i].push_values(list_k_points[i], &crystal_J, &crystal_spin);
-//		H[i].push_gap(epsilon);
-//		H[i].Cholesky_decomposition_Lapack();
-//		w[i] = H[i].eigenvalues();
-//		//u[i]=H[i].eigenvectors();
-//	}
-//	//saving the bands in the file magnons.data
-//	for (int i = 0; i < number_k_points; i++)
-//	{
-//		for (int m = 0; m < number_magnetic_atoms; m++)
-//		{
-//			// cout<<w[i][m]<<" ";
-//			magnons_file_tmp << w[i][m] << "	";
-//		}
-//		magnons_file_tmp << endl;
-//		// cout<<endl;
-//	}
-//	magnons_file_tmp.close();
-//	// cout<<"Eigenvectors: "<<endl;
+	ifstream k_points_file_tmp;
+	k_points_file_tmp.open("kpoints.data");
+	K_points k_points;
+	k_points.push_values(&k_points_file_tmp);
+	k_points_file_tmp.close();
+	double **list_k_points;
+	list_k_points = k_points.pull_list_k_points();
+	int number_k_points;
+	number_k_points = k_points.pull_total_number_k_points();
+	//cout<<"List of K points: "<<endl;
+	//for(int i=0;i<number_k_points;i++){
+	//	for(int r=0;r<3;r++)
+	//		cout<<list_k_points[i][r]<<" ";
+	//	cout<<endl;
+	//}
+	//// calculating bands along the k path underlined in the file k_points_file
+	// saving the bands in the file magnons.data
+	double **w;
+	w = new double *[number_k_points];
+	ofstream magnons_file_tmp;
+	magnons_file_tmp.open("magnons.data");
+	Hamiltonian_k *H;
+	H = new Hamiltonian_k[number_k_points];
+	complex<double> ***u;
+	u = new complex<double> **[number_k_points];
+	//// parallelizing on the k calculations
+	//#pragma omp parallel for
+	for (int i = 0; i < number_k_points; i++)
+	{
+		w[i] = new double[number_magnetic_atoms];
+		H[i].push_values(list_k_points[i], &crystal_J, &crystal_spin);
+		H[i].push_gap(epsilon);
+		H[i].Cholesky_decomposition_Lapack();
+		w[i] = H[i].eigenvalues();
+	}
+	//saving the bands in the file magnons.data
+	for (int i = 0; i < number_k_points; i++)
+	{
+		for (int m = 0; m < number_magnetic_atoms; m++)
+			magnons_file_tmp << w[i][m] << "	";
+		magnons_file_tmp << endl;
+	}
+	magnons_file_tmp.close();
+	// cout<<"Eigenvectors: "<<endl;
 	// for(int k=0;k<number_k_points;k++){
-	//	cout<<"K point: "<<k<<endl;
-	//	for(int j=0;j<number_magnetic_atoms*2;j++){
-	//		for(int i=0;i<number_magnetic_atoms;i++)
-	//			cout<<u[k][i][j]<<" ";
-	//	cout<<endl;
-	//	}
-	//	cout<<endl;
+		//cout<<"K point: "<<k<<endl;
+		//for(int j=0;j<number_magnetic_atoms*2;j++){
+		//	for(int i=0;i<number_magnetic_atoms;i++)
+		//		cout<<u[k][i][j]<<" ";
+		//cout<<endl;
+		//}
+		//cout<<endl;
 	// }
-	////END STUDYING THE DIAGONALIZATION FOR A PATH OF K POINTS
-//
-	//////START STUDYING THE BERRY CURVATURE IN A K PLANE
-	K_points_grid K_grid;
-	double spacing_grid = 0.001;
-	double *shift_grid;
-	shift_grid = new double[3];
-	for (int i = 0; i < 3; i++)
-		shift_grid[i] = 0.0;
+	//END STUDYING THE DIAGONALIZATION FOR A PATH OF K POINTS
 
-	int *plane_grid;
-	plane_grid = new int[3];
-	/// plane xy
-	plane_grid[0] = 1;
-	plane_grid[1] = 1;
-	plane_grid[2] = 0;
+	//////START STUDYING THE BERRY CURVATURE IN A K PLANE
+	//K_points_grid K_grid;
+	//double spacing_grid = 0.01;
+	//double *shift_grid;
+	//shift_grid = new double[3];
+	//for (int i = 0; i < 3; i++)
+	//	shift_grid[i] = 0.0;
+//
+	//int *plane_grid;
+	//int band_number = 1;
+	//plane_grid = new int[3];
+	///// plane xy
+	//plane_grid[0] = 1;
+	//plane_grid[1] = 1;
+	//plane_grid[2] = 0;
 	/// creating the K grid in xy plane
-	K_grid.K_points_grid_push_values(&crystal, spacing_grid, shift_grid, plane_grid);
-	///K_grid.K_points_grid_print();
-	Berry_curvature Omega;
-	Omega.Berry_curvature_push_values(&K_grid, &crystal_J, &crystal_spin, epsilon);
-	ofstream Re_Omega_file;
-	ofstream Im_Omega_file;
-	Re_Omega_file.open("Re_Berry_curvature.data");
-	Im_Omega_file.open("Im_Berry_curvature.data");
-	Omega.Berry_curvature_print(&Re_Omega_file, &Im_Omega_file);
-	Im_Omega_file.close();
-	Re_Omega_file.close();
+	//K_grid.K_points_grid_push_values(&crystal, spacing_grid, shift_grid, plane_grid);
+	//K_grid.K_points_grid_print();
+	//Berry_curvature Omega;
+	//Omega.Berry_curvature_push_values(&K_grid, &crystal_J, &crystal_spin, epsilon, band_number);
+	//ofstream Re_Omega_file;
+	//ofstream Im_Omega_file;
+	//Re_Omega_file.open("Re_Berry_curvature.data");
+	//Im_Omega_file.open("Im_Berry_curvature.data");
+	//Omega.Berry_curvature_print(&Re_Omega_file, &Im_Omega_file);
+	//Im_Omega_file.close();
+	//Re_Omega_file.close();
 	//// considering the same k path of the bands...
 	//// complex<double>* Tr_Omega_k;
 	//// Tr_Omega_k=new complex<double>;
@@ -2708,3 +2525,4 @@ int main()
 	///// END STUDYING THE BERRY CURVATURE ALONG THE K PATH OF THE MAGNONS SPECTRA
 	return 0;
 }
+
